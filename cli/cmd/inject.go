@@ -136,7 +136,7 @@ func (rt resourceTransformerInject) transform(bytes []byte) ([]byte, []inject.Re
 	}
 
 	if rt.enableDebugSidecar {
-		conf = conf.WithDebugSidecar()
+		conf.AppendPodAnnotation(k8s.ProxyEnableDebugAnnotation, "true")
 	}
 
 	report, err := conf.ParseMetaAndYAML(bytes)
@@ -364,6 +364,11 @@ func (options *proxyConfigOptions) overrideConfigs(configs *cfg.All, overrideAnn
 			configs.Proxy.ProxyInitImage.ImageName = registryOverride(configs.Proxy.ProxyInitImage.ImageName, options.dockerRegistry)
 		}
 		overrideAnnotations[k8s.ProxyInitImageAnnotation] = configs.Proxy.ProxyInitImage.ImageName
+	}
+
+	if options.initImageVersion != "" {
+		configs.Proxy.ProxyInitImageVersion = options.initImageVersion
+		overrideAnnotations[k8s.ProxyInitImageVersionAnnotation] = configs.Proxy.ProxyInitImageVersion
 	}
 
 	if options.imagePullPolicy != "" {

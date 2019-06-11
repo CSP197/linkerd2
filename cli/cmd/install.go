@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
@@ -178,6 +179,7 @@ func newInstallOptionsWithDefaults() *installOptions {
 			ignoreCluster:          false,
 			proxyImage:             defaultDockerRegistry + "/proxy",
 			initImage:              defaultDockerRegistry + "/proxy-init",
+			initImageVersion:       version.ProxyInitVersion,
 			dockerRegistry:         defaultDockerRegistry,
 			imagePullPolicy:        "IfNotPresent",
 			ignoreInboundPorts:     nil,
@@ -351,6 +353,7 @@ func (options *installOptions) validateAndBuild(stage string, flags *pflag.FlagS
 	if err := options.validate(); err != nil {
 		return nil, nil, err
 	}
+	options.handleHA()
 	options.recordFlags(flags)
 
 	identityValues, err := options.identityOptions.validateAndBuild()
@@ -510,6 +513,10 @@ func (options *installOptions) validate() error {
 		return errors.New("--proxy-log-level must not be empty")
 	}
 
+	return nil
+}
+
+func (options *installOptions) handleHA() {
 	if options.highAvailability {
 		if options.controllerReplicas == defaultControllerReplicas {
 			options.controllerReplicas = defaultHAControllerReplicas
@@ -525,8 +532,6 @@ func (options *installOptions) validate() error {
 	}
 
 	options.identityOptions.replicas = options.controllerReplicas
-
-	return nil
 }
 
 func (options *installOptions) buildValuesWithoutIdentity(configs *pb.All) (*installValues, error) {
@@ -559,7 +564,7 @@ func (options *installOptions) buildValuesWithoutIdentity(configs *pb.All) (*ins
 		ControllerUID:      options.controllerUID,
 		EnableH2Upgrade:    !options.disableH2Upgrade,
 		NoInitContainer:    options.noInitContainer,
-		PrometheusLogLevel: toPromLogLevel(options.controllerLogLevel),
+		PrometheusLogLevel: toPromLogLevel(strings.ToLower(options.controllerLogLevel)),
 
 		Configs: configJSONs{
 			Global:  globalJSON,
@@ -801,6 +806,7 @@ func (options *installOptions) proxyConfig() *pb.Proxy {
 		},
 		DisableExternalProfiles: !options.enableExternalProfiles,
 		ProxyVersion:            options.proxyVersion,
+		ProxyInitImageVersion:   options.initImageVersion,
 	}
 }
 
