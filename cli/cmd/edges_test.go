@@ -8,53 +8,18 @@ import (
 
 type edgesParamsExp struct {
 	options      *edgesOptions
-	resSrc       []string
-	resDst       []string
-	resClient    []string
-	resServer    []string
-	resMsg       []string
 	resourceType string
 	file         string
 }
 
 func TestEdges(t *testing.T) {
-	// response content for SRC, DST, CLIENT, SERVER and MSG
-	var (
-		resSrc = []string{
-			"web-57b7f9db85-297dw",
-			"web-57b7f9db85-297dw",
-			"vote-bot-7466ffc7f7-5rc4l",
-		}
-		resDst = []string{
-			"emoji-646ddcc5f9-zjgs9",
-			"voting-689f845d98-rj6nz",
-			"web-57b7f9db85-297dw",
-		}
-		resClient = []string{
-			"web.emojivoto.serviceaccount.identity.linkerd.cluster.local",
-			"web.emojivoto.serviceaccount.identity.linkerd.cluster.local",
-			"default.emojivoto.serviceaccount.identity.linkerd.cluster.local",
-		}
-		resServer = []string{
-			"emoji.emojivoto.serviceaccount.identity.linkerd.cluster.local",
-			"voting.emojivoto.serviceaccount.identity.linkerd.cluster.local",
-			"web.emojivoto.serviceaccount.identity.linkerd.cluster.local",
-		}
-		resMsg = []string{"", "", ""}
-	)
-
 	options := newEdgesOptions()
-	options.namespace = "emojivoto"
 	options.outputFormat = tableOutput
+	options.allNamespaces = true
 	t.Run("Returns edges", func(t *testing.T) {
 		testEdgesCall(edgesParamsExp{
 			options:      options,
-			resourceType: "pod",
-			resSrc:       resSrc,
-			resDst:       resDst,
-			resClient:    resClient,
-			resServer:    resServer,
-			resMsg:       resMsg,
+			resourceType: "deployment",
 			file:         "edges_one_output.golden",
 		}, t)
 	})
@@ -63,20 +28,24 @@ func TestEdges(t *testing.T) {
 	t.Run("Returns edges (json)", func(t *testing.T) {
 		testEdgesCall(edgesParamsExp{
 			options:      options,
-			resourceType: "pod",
-			resSrc:       resSrc,
-			resDst:       resDst,
-			resClient:    resClient,
-			resServer:    resServer,
-			resMsg:       resMsg,
+			resourceType: "deployment",
 			file:         "edges_one_output_json.golden",
 		}, t)
 	})
 
-	t.Run("Returns an error if outputFormat specified is not table or json", func(t *testing.T) {
+	t.Run("Returns edges (wide)", func(t *testing.T) {
 		options.outputFormat = wideOutput
-		args := []string{"pod"}
-		expectedError := "--output currently only supports table and json"
+		testEdgesCall(edgesParamsExp{
+			options:      options,
+			resourceType: "deployment",
+			file:         "edges_wide_output.golden",
+		}, t)
+	})
+
+	t.Run("Returns an error if outputFormat specified is not wide, table or json", func(t *testing.T) {
+		options.outputFormat = "test"
+		args := []string{"deployment"}
+		expectedError := "--output supports table, json and wide"
 
 		_, err := buildEdgesRequests(args, options)
 		if err == nil || err.Error() != expectedError {
@@ -131,11 +100,11 @@ func TestEdges(t *testing.T) {
 
 func testEdgesCall(exp edgesParamsExp, t *testing.T) {
 	mockClient := &public.MockAPIClient{}
-	response := public.GenEdgesResponse(exp.resourceType, exp.resSrc, exp.resDst, exp.resClient, exp.resServer, exp.resMsg)
+	response := public.GenEdgesResponse(exp.resourceType, "all")
 
 	mockClient.EdgesResponseToReturn = &response
 
-	args := []string{"pod"}
+	args := []string{"deployment"}
 	reqs, err := buildEdgesRequests(args, exp.options)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)

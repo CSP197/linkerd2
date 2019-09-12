@@ -59,6 +59,7 @@ const ApiHelpers = (pathPrefix, defaultMetricsWindow = '1m') => {
   let metricsWindow = defaultMetricsWindow;
   const podsPath = `/api/pods`;
   const servicesPath = `/api/services`;
+  const edgesPath = `/api/edges`;
 
   const validMetricsWindows = {
     "10s": "10 minutes",
@@ -110,6 +111,10 @@ const ApiHelpers = (pathPrefix, defaultMetricsWindow = '1m') => {
     return apiFetch(servicesPath);
   };
 
+  const fetchEdges = (namespace, resourceType) => {
+    return apiFetch(edgesPath + "?resource_type=" + resourceType + "&namespace=" + namespace);
+  };
+
   const getMetricsWindow = () => metricsWindow;
   const getMetricsWindowDisplayText = () => validMetricsWindows[metricsWindow];
 
@@ -129,6 +134,19 @@ const ApiHelpers = (pathPrefix, defaultMetricsWindow = '1m') => {
     }
     if (includeTcp) {
       resourceUrl += '&tcp_stats=true';
+    }
+
+    return resourceUrl;
+  };
+
+  const urlsForResourceNoStats = (type, namespace) => {
+    // Traffic Performance Summary. This retrieves (non-Prometheus) stats for the given resource.
+    let resourceUrl = '/api/tps-reports?skip_stats=true&resource_type=' + type;
+
+    if (_isEmpty(namespace)) {
+      resourceUrl += '&all_namespaces=true';
+    } else {
+      resourceUrl += '&namespace=' + namespace;
     }
 
     return resourceUrl;
@@ -211,11 +229,13 @@ const ApiHelpers = (pathPrefix, defaultMetricsWindow = '1m') => {
     fetchMetrics,
     fetchPods,
     fetchServices,
+    fetchEdges,
     getMetricsWindow,
     setMetricsWindow,
     getValidMetricsWindows: () => Object.keys(validMetricsWindows),
     getMetricsWindowDisplayText,
     urlsForResource,
+    urlsForResourceNoStats,
     PrefixedLink,
     prefixLink,
     ResourceLink,

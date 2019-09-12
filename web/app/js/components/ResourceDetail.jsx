@@ -2,6 +2,7 @@ import 'whatwg-fetch';
 import { emptyMetric, processMultiResourceRollup, processSingleResourceRollup } from './util/MetricUtils.jsx';
 import { resourceTypeToCamelCase, singularResource } from './util/Utils.js';
 import AddResources from './AddResources.jsx';
+import EdgesTable from './EdgesTable.jsx';
 import ErrorBanner from './ErrorBanner.jsx';
 import Grid from '@material-ui/core/Grid';
 import MetricsTable from './MetricsTable.jsx';
@@ -11,18 +12,23 @@ import React from 'react';
 import SimpleChip from './util/Chip.jsx';
 import Spinner from './util/Spinner.jsx';
 import TopRoutesTabs from './TopRoutesTabs.jsx';
+import TrafficSplitDetail from './TrafficSplitDetail.jsx';
 import Typography from '@material-ui/core/Typography';
 import _filter from 'lodash/filter';
 import _get from 'lodash/get';
+import _indexOf from 'lodash/indexOf';
 import _isEmpty from 'lodash/isEmpty';
 import _isEqual from 'lodash/isEqual';
 import _isNil from 'lodash/isNil';
 import _merge from 'lodash/merge';
 import _reduce from 'lodash/reduce';
+import { processEdges } from './util/EdgesUtils.jsx';
 import { withContext } from './util/AppContext.jsx';
 
 // if there has been no traffic for some time, show a warning
 const showNoTrafficMsgDelayMs = 6000;
+// resource types supported when querying API for edge data
+const edgeDataAvailable = ["daemonset", "deployment", "job", "pod", "replicationcontroller", "statefulset"];
 
 const getResourceFromUrl = (match, pathPrefix) => {
   let resource = {
@@ -124,33 +130,43 @@ export class ResourceDetailBase extends React.Component {
 
     let { resource } = this.state;
 
-    this.api.setCurrentRequests([
+    let apiRequests =
+      [
       // inbound stats for this resource
-      this.api.fetchMetrics(
-        `${this.api.urlsForResource(resource.type, resource.namespace, true)}&resource_name=${resource.name}`
-      ),
-      // list of all pods in this namespace (hack since we can't currently query for all pods in a resource)
-      this.api.fetchPods(resource.namespace),
-      // metrics for all pods in this namespace (hack, continued)
-      this.api.fetchMetrics(
-        `${this.api.urlsForResource("pod", resource.namespace, true)}`
-      ),
-      // upstream resources of this resource (meshed traffic only)
-      this.api.fetchMetrics(
-        `${this.api.urlsForResource("all")}&to_name=${resource.name}&to_type=${resource.type}&to_namespace=${resource.namespace}`
-      ),
-      // downstream resources of this resource (meshed traffic only)
-      this.api.fetchMetrics(
-        `${this.api.urlsForResource("all")}&from_name=${resource.name}&from_type=${resource.type}&from_namespace=${resource.namespace}`
-      )
-    ]);
+        this.api.fetchMetrics(
+          `${this.api.urlsForResource(resource.type, resource.namespace, true)}&resource_name=${resource.name}`
+        ),
+        // list of all pods in this namespace (hack since we can't currently query for all pods in a resource)
+        this.api.fetchPods(resource.namespace),
+        // metrics for all pods in this namespace (hack, continued)
+        this.api.fetchMetrics(
+          `${this.api.urlsForResource("pod", resource.namespace, true)}`
+        ),
+        // upstream resources of this resource (meshed traffic only)
+        this.api.fetchMetrics(
+          `${this.api.urlsForResource("all")}&to_name=${resource.name}&to_type=${resource.type}&to_namespace=${resource.namespace}`
+        ),
+        // downstream resources of this resource (meshed traffic only)
+        this.api.fetchMetrics(
+          `${this.api.urlsForResource("all")}&from_name=${resource.name}&from_type=${resource.type}&from_namespace=${resource.namespace}`
+        )
+      ];
+
+    if (_indexOf(edgeDataAvailable, resource.type) > 0) {
+      apiRequests = apiRequests.concat([
+        this.api.fetchEdges(resource.namespace, resource.type)
+      ]);
+    }
+
+    this.api.setCurrentRequests(apiRequests);
 
     Promise.all(this.api.getCurrentPromises())
-      .then(([resourceRsp, podListRsp, podMetricsRsp, upstreamRsp, downstreamRsp]) => {
-        let resourceMetrics = processSingleResourceRollup(resourceRsp);
-        let podMetrics = processSingleResourceRollup(podMetricsRsp);
-        let upstreamMetrics = processMultiResourceRollup(upstreamRsp);
-        let downstreamMetrics = processMultiResourceRollup(downstreamRsp);
+      .then(([resourceRsp, podListRsp, podMetricsRsp, upstreamRsp, downstreamRsp, edgesRsp]) => {
+        let resourceMetrics = processSingleResourceRollup(resourceRsp, resource.type);
+        let podMetrics = processSingleResourceRollup(podMetricsRsp, resource.type);
+        let upstreamMetrics = processMultiResourceRollup(upstreamRsp, resource.type);
+        let downstreamMetrics = processMultiResourceRollup(downstreamRsp, resource.type);
+        let edges = processEdges(edgesRsp, this.state.resource.name);
 
         // INEFFICIENT: get metrics for all the pods belonging to this resource.
         // Do this by querying for metrics for all pods in this namespace and then filtering
@@ -195,6 +211,7 @@ export class ResourceDetailBase extends React.Component {
         }
 
         let isTcpOnly = !hasHttp && hasTcp;
+        let isTrafficSplit = resource.type === "trafficsplit";
 
         // figure out when the last traffic this resource received was so we can show a no traffic message
         let lastMetricReceivedTime = this.state.lastMetricReceivedTime;
@@ -205,11 +222,14 @@ export class ResourceDetailBase extends React.Component {
         this.setState({
           resourceMetrics,
           resourceIsMeshed,
+          resourceRsp,
           podMetrics: podMetricsForResource,
           upstreamMetrics,
           downstreamMetrics,
+          edges,
           lastMetricReceivedTime,
           isTcpOnly,
+          isTrafficSplit,
           loaded: true,
           pendingRequests: false,
           error: null,
@@ -251,12 +271,15 @@ export class ResourceDetailBase extends React.Component {
     let {
       resourceName,
       resourceType,
+      resourceRsp,
       namespace,
       resourceMetrics,
+      edges,
       unmeshedSources,
       resourceIsMeshed,
       lastMetricReceivedTime,
       isTcpOnly,
+      isTrafficSplit,
     } = this.state;
 
     let query = {
@@ -281,6 +304,15 @@ export class ResourceDetailBase extends React.Component {
 
     let showNoTrafficMsg = resourceIsMeshed && (Date.now() - lastMetricReceivedTime > showNoTrafficMsgDelayMs);
 
+    if (isTrafficSplit) {
+      return (
+        <TrafficSplitDetail
+          resourceType={resourceType}
+          resourceName={resourceName}
+          resourceMetrics={resourceMetrics}
+          resourceRsp={resourceRsp} />
+      );
+    }
     return (
       <div>
         <Grid container justify="space-between" alignItems="center">
@@ -347,6 +379,17 @@ export class ResourceDetailBase extends React.Component {
           title="TCP"
           isTcpTable={true}
           metrics={this.state.podMetrics} />
+
+        <Grid container direction="column" justify="center">
+          <Grid item>
+            <EdgesTable
+              api={this.api}
+              namespace={this.state.resource.namespace}
+              type={this.state.resource.type}
+              edges={edges} />
+          </Grid>
+        </Grid>
+
       </div>
     );
   }

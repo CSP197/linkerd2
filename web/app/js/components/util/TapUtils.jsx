@@ -1,6 +1,6 @@
 import { podOwnerLookup, toShortResourceName } from './Utils.js';
-
 import BaseTable from '../BaseTable.jsx';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Grid from '@material-ui/core/Grid';
 import { Link } from 'react-router-dom';
 import OpenInNewIcon from '@material-ui/icons/OpenInNew';
@@ -18,6 +18,7 @@ import _map from 'lodash/map';
 import _merge from 'lodash/merge';
 import _size from 'lodash/size';
 import _take from 'lodash/take';
+import { faLongArrowAltRight } from '@fortawesome/free-solid-svg-icons/faLongArrowAltRight';
 
 export const httpMethods = ["GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"];
 
@@ -86,6 +87,10 @@ export const wsCloseCodes = {
   1014: "Bad Gateway",
   1015: "TLS Handshake"
 };
+
+export const WS_NORMAL_CLOSURE = 1000;
+export const WS_ABNORMAL_CLOSURE = 1006;
+export const WS_POLICY_VIOLATION = 1008;
 
 /*
   Use tap data to figure out a resource's unmeshed upstreams/downstreams
@@ -206,7 +211,7 @@ const resourceShortLink = (resourceType, labels, ResourceLink) => (
 const displayLimit = 3; // how many upstreams/downstreams to display in the popover table
 const popoverSrcDstColumns = [
   { title: "Source", dataIndex: "source" },
-  { title: "", key: "arrow", render: () => <i className="fas fa-long-arrow-alt-right" /> },
+  { title: "", key: "arrow", render: () => <FontAwesomeIcon icon={faLongArrowAltRight} /> },
   { title: "Destination", dataIndex: "destination" }
 ];
 
@@ -234,14 +239,14 @@ const getPodList = (endpoint, display, labels, ResourceLink) => {
     podList = (
       <React.Fragment>
         {
-            _map(display.pods, (namespace, pod, i) => {
-              if (i > displayLimit) {
-                return null;
-              } else {
-                return <div key={pod}>{resourceShortLink("pod", { pod, namespace }, ResourceLink)}</div>;
-              }
-            })
-          }
+          _map(display.pods, (namespace, pod, i) => {
+            if (i > displayLimit) {
+              return null;
+            } else {
+              return <div key={pod}>{resourceShortLink("pod", { pod, namespace }, ResourceLink)}</div>;
+            }
+          })
+        }
         { (_size(display.pods) > displayLimit ? "..." : "") }
       </React.Fragment>
     );
@@ -254,7 +259,7 @@ const getIpList = (endpoint, display) => {
   let ipList = endpoint.str;
   if (display) {
     ipList = _take(Object.keys(display.ips), displayLimit).join(", ") +
-    (_size(display.ips) > displayLimit ? "..." : "");
+      (_size(display.ips) > displayLimit ? "..." : "");
   }
   return <div className="popover-td">{ipList}</div>;
 };

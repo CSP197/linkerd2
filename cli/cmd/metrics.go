@@ -91,7 +91,7 @@ func newCmdMetrics() *cobra.Command {
   )`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			k8sAPI, err := k8s.NewAPI(kubeconfigPath, kubeContext, 0)
+			k8sAPI, err := k8s.NewAPI(kubeconfigPath, kubeContext, impersonate, 0)
 			if err != nil {
 				return err
 			}
@@ -161,16 +161,9 @@ func getMetrics(
 	}
 
 	defer portforward.Stop()
-
-	go func() {
-		err := portforward.Run()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error running port-forward: %s", err)
-			portforward.Stop()
-		}
-	}()
-
-	<-portforward.Ready()
+	if err = portforward.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running port-forward: %s", err)
+	}
 
 	metricsURL := portforward.URLFor("/metrics")
 	resp, err := http.Get(metricsURL)

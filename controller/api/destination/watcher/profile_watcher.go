@@ -2,12 +2,12 @@ package watcher
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
-	sp "github.com/linkerd/linkerd2/controller/gen/apis/serviceprofile/v1alpha1"
-	splisters "github.com/linkerd/linkerd2/controller/gen/client/listers/serviceprofile/v1alpha1"
+	sp "github.com/linkerd/linkerd2/controller/gen/apis/serviceprofile/v1alpha2"
+	splisters "github.com/linkerd/linkerd2/controller/gen/client/listers/serviceprofile/v1alpha2"
 	"github.com/linkerd/linkerd2/controller/k8s"
+	"github.com/prometheus/client_golang/prometheus"
 	logging "github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/tools/cache"
@@ -22,14 +22,15 @@ type (
 		profiles      map[ProfileID]*profilePublisher
 
 		log          *logging.Entry
-		sync.RWMutex // This mutex protects modifcation of the map itself.
+		sync.RWMutex // This mutex protects modification of the map itself.
 	}
 
 	profilePublisher struct {
 		profile   *sp.ServiceProfile
 		listeners []ProfileUpdateListener
 
-		log *logging.Entry
+		log            *logging.Entry
+		profileMetrics metrics
 		// All access to the profilePublisher is explicitly synchronized by this mutex.
 		sync.Mutex
 	}
@@ -39,6 +40,8 @@ type (
 		Update(profile *sp.ServiceProfile)
 	}
 )
+
+var profileVecs = newMetricsVecs("profile", []string{"namespace", "profile"})
 
 // NewProfileWatcher creates a ProfileWatcher and begins watching the k8sAPI for
 // service profile changes.
@@ -67,12 +70,7 @@ func NewProfileWatcher(k8sAPI *k8s.API, log *logging.Entry) *ProfileWatcher {
 // Subscribe to an authority.
 // The provided listener will be updated each time the service profile for the
 // given authority is changed.
-func (pw *ProfileWatcher) Subscribe(authority string, contextToken string, listener ProfileUpdateListener) error {
-	id, err := profileID(authority, contextToken)
-	if err != nil {
-		return err
-	}
-
+func (pw *ProfileWatcher) Subscribe(id ProfileID, listener ProfileUpdateListener) error {
 	pw.log.Infof("Establishing watch on profile %s", id)
 
 	publisher := pw.getOrNewProfilePublisher(id, nil)
@@ -82,11 +80,7 @@ func (pw *ProfileWatcher) Subscribe(authority string, contextToken string, liste
 }
 
 // Unsubscribe removes a listener from the subscribers list for this authority.
-func (pw *ProfileWatcher) Unsubscribe(authority string, contextToken string, listener ProfileUpdateListener) error {
-	id, err := profileID(authority, contextToken)
-	if err != nil {
-		return err
-	}
+func (pw *ProfileWatcher) Unsubscribe(id ProfileID, listener ProfileUpdateListener) error {
 	pw.log.Infof("Stopping watch on profile %s", id)
 
 	publisher, ok := pw.getProfilePublisher(id)
@@ -151,6 +145,10 @@ func (pw *ProfileWatcher) getOrNewProfilePublisher(id ProfileID, profile *sp.Ser
 				"ns":        id.Namespace,
 				"profile":   id.Name,
 			}),
+			profileMetrics: profileVecs.newMetrics(prometheus.Labels{
+				"namespace": id.Namespace,
+				"profile":   id.Name,
+			}),
 		}
 		pw.profiles[id] = publisher
 	}
@@ -175,6 +173,8 @@ func (pp *profilePublisher) subscribe(listener ProfileUpdateListener) {
 
 	pp.listeners = append(pp.listeners, listener)
 	listener.Update(pp.profile)
+
+	pp.profileMetrics.setSubscribers(len(pp.listeners))
 }
 
 // unsubscribe returns true if and only if the listener was found and removed.
@@ -190,9 +190,11 @@ func (pp *profilePublisher) unsubscribe(listener ProfileUpdateListener) {
 			pp.listeners[i] = pp.listeners[n-1]
 			pp.listeners[n-1] = nil
 			pp.listeners = pp.listeners[:n-1]
-			return
+			break
 		}
 	}
+
+	pp.profileMetrics.setSubscribers(len(pp.listeners))
 }
 
 func (pp *profilePublisher) update(profile *sp.ServiceProfile) {
@@ -204,37 +206,6 @@ func (pp *profilePublisher) update(profile *sp.ServiceProfile) {
 	for _, listener := range pp.listeners {
 		listener.Update(profile)
 	}
-}
 
-////////////
-/// util ///
-////////////
-
-func nsFromToken(token string) string {
-	// ns:<namespace>
-	parts := strings.Split(token, ":")
-	if len(parts) == 2 && parts[0] == "ns" {
-		return parts[1]
-	}
-
-	return ""
-}
-
-func profileID(authority string, contextToken string) (ProfileID, error) {
-	host, _, err := getHostAndPort(authority)
-	if err != nil {
-		return ProfileID{}, err
-	}
-	service, _, err := GetServiceAndPort(authority)
-	if err != nil {
-		return ProfileID{}, err
-	}
-	id := ProfileID{
-		Name:      host,
-		Namespace: service.Namespace,
-	}
-	if contextNs := nsFromToken(contextToken); contextNs != "" {
-		id.Namespace = contextNs
-	}
-	return id, nil
+	pp.profileMetrics.incUpdates()
 }

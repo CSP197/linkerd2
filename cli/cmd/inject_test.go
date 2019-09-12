@@ -60,7 +60,12 @@ func testUninjectAndInject(t *testing.T, tc testCase) {
 }
 
 func testInstallConfig() *pb.All {
-	_, c, err := testInstallOptions().validateAndBuild("", nil)
+	installOptions, err := testInstallOptions()
+	if err != nil {
+		log.Fatalf("Unexpected error: %v", err)
+	}
+
+	_, c, err := installOptions.validateAndBuild("", nil)
 	if err != nil {
 		log.Fatalf("test install options must be valid: %s", err)
 	}
@@ -432,6 +437,30 @@ func TestInjectFilePath(t *testing.T) {
 	t.Run("read from folder --verbose", func(t *testing.T) {
 		testReadFromFolder(t, resourceFolder, expectedFolder)
 	})
+}
+
+func TestValidURL(t *testing.T) {
+	// if the string follows a URL pattern, true has to be returned
+	// if not false is returned
+
+	tests := map[string]bool{
+		"http://www.linkerd.io":  true,
+		"https://www.linkerd.io": true,
+		"www.linkerd.io/":        false,
+		"~/foo/bar.yaml":         false,
+		"./foo/bar.yaml":         false,
+		"/foo/bar/baz.yml":       false,
+		"../foo/bar/baz.yaml":    false,
+		"https//":                false,
+	}
+
+	for url, expectedValue := range tests {
+		value := isValidURL(url)
+		if value != expectedValue {
+			t.Errorf("Result mismatch for %s. expected %v, but got %v", url, expectedValue, value)
+		}
+	}
+
 }
 
 func TestWalk(t *testing.T) {

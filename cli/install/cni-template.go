@@ -18,16 +18,74 @@
 
 package install
 
-// CNITemplate provides the base template for the `linkerd install-cni-plugin` command.
-const CNITemplate = `### Namespace ###
+const (
+	// CNITemplate provides the base template for the `linkerd install-cni-plugin` command.
+	CNITemplate = `### Namespace ###
 kind: Namespace
 apiVersion: v1
 metadata:
   name: {{.Namespace}}
 ---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: linkerd-{{.Namespace}}-cni
+  labels:
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
+spec:
+  allowPrivilegeEscalation: false
+  fsGroup:
+    rule: RunAsAny
+  hostNetwork: true
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+  - hostPath
+  - secret
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  name: linkerd-cni
+  namespace: {{.Namespace}}
+  labels:
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: linkerd-cni
+  namespace: {{.Namespace}}
+  labels:
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
+rules:
+- apiGroups: ['extensions', 'policy']
+  resources: ['podsecuritypolicies']
+  resourceNames:
+  - linkerd-{{.Namespace}}-cni
+  verbs: ['use']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: linkerd-cni
+  namespace: {{.Namespace}}
+  labels:
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: linkerd-cni
+subjects:
+- kind: ServiceAccount
   name: linkerd-cni
   namespace: {{.Namespace}}
 ---
@@ -37,6 +95,9 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: linkerd-cni
+  labels:
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
 rules:
 - apiGroups: [""]
   resources: ["pods", "nodes", "namespaces"]
@@ -46,6 +107,9 @@ apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
 metadata:
   name: linkerd-cni
+  labels:
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -61,6 +125,9 @@ apiVersion: v1
 metadata:
   name: linkerd-cni-config
   namespace: {{.Namespace}}
+  labels:
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
 data:
   incoming_proxy_port: "{{.InboundPort}}"
   outgoing_proxy_port: "{{.OutboundPort}}"
@@ -71,6 +138,7 @@ data:
   log_level: "{{.LogLevel}}"
   dest_cni_net_dir: "{{.DestCNINetDir}}"
   dest_cni_bin_dir: "{{.DestCNIBinDir}}"
+  use_wait_flag: "{{.UseWaitFlag}}"
   # The CNI network configuration to install on each node. The special
   # values in this config will be automatically populated.
   cni_network_config: |-
@@ -93,19 +161,22 @@ data:
         "ports-to-redirect": [__PORTS_TO_REDIRECT__],
         "inbound-ports-to-ignore": [__INBOUND_PORTS_TO_IGNORE__],
         "outbound-ports-to-ignore": [__OUTBOUND_PORTS_TO_IGNORE__],
-        "simulate": __SIMULATE__
+        "simulate": __SIMULATE__,
+        "use-wait-flag": __USE_WAIT_FLAG__
       }
     }
 ---
 # This manifest installs the linkerd CNI plugins and network config on
 # each master and worker node in a Kubernetes cluster.
 kind: DaemonSet
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 metadata:
   name: linkerd-cni
   namespace: {{.Namespace}}
   labels:
     k8s-app: linkerd-cni
+    {{.ControllerNamespaceLabel}}: {{.Namespace}}
+    linkerd.io/cni-resource: "true"
   annotations:
     {{.CreatedByAnnotation}}: {{.CliVersion}}
 spec:
@@ -178,6 +249,8 @@ spec:
               key: log_level
         - name: SLEEP
           value: "true"
+        - name: USE_WAIT_FLAG
+          value: "{{.UseWaitFlag}}"
         lifecycle:
           preStop:
             exec:
@@ -207,3 +280,4 @@ spec:
           path: {{.DestCNINetDir}}
       {{- end }}
 `
+)

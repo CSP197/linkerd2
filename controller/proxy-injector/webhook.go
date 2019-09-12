@@ -12,12 +12,20 @@ import (
 	log "github.com/sirupsen/logrus"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
+)
+
+const (
+	eventTypeSkipped  = "InjectionSkipped"
+	eventTypeInjected = "Injected"
 )
 
 // Inject returns an AdmissionResponse containing the patch, if any, to apply
 // to the pod (proxy sidecar and eventually the init container to set it up)
 func Inject(api *k8s.API,
 	request *admissionv1beta1.AdmissionRequest,
+	recorder record.EventRecorder,
 ) (*admissionv1beta1.AdmissionResponse, error) {
 	log.Debugf("request object bytes: %s", request.Object.Raw)
 
@@ -53,26 +61,40 @@ func Inject(api *k8s.API,
 		Allowed: true,
 	}
 
-	if !report.Injectable() {
-		log.Infof("skipped %s", report.ResName())
+	var parent *runtime.Object
+	if ownerRef := resourceConfig.GetOwnerRef(); ownerRef != nil {
+		objs, err := api.GetObjects(request.Namespace, ownerRef.Kind, ownerRef.Name)
+		if err != nil {
+			log.Warnf("couldn't retrieve parent object %s-%s-%s; error: %s", request.Namespace, ownerRef.Kind, ownerRef.Name, err)
+		} else if len(objs) == 0 {
+			log.Warnf("couldn't retrieve parent object %s-%s-%s", request.Namespace, ownerRef.Kind, ownerRef.Name)
+		} else {
+			parent = &objs[0]
+		}
+	}
+
+	if injectable, reason := report.Injectable(); !injectable {
+		if parent != nil {
+			recorder.Eventf(*parent, v1.EventTypeNormal, eventTypeSkipped, "Linkerd sidecar proxy injection skipped: %s", reason)
+		}
+		log.Infof("skipped %s: %s", report.ResName(), reason)
 		return admissionResponse, nil
 	}
 
 	resourceConfig.AppendPodAnnotations(map[string]string{
 		pkgK8s.CreatedByAnnotation: fmt.Sprintf("linkerd/proxy-injector %s", version.Version),
 	})
-	p, err := resourceConfig.GetPatch(request.Object.Raw, true)
+	patchJSON, err := resourceConfig.GetPatch(true)
 	if err != nil {
 		return nil, err
 	}
 
-	if p.IsEmpty() {
+	if len(patchJSON) == 0 {
 		return admissionResponse, nil
 	}
 
-	patchJSON, err := p.Marshal()
-	if err != nil {
-		return nil, err
+	if parent != nil {
+		recorder.Event(*parent, v1.EventTypeNormal, eventTypeInjected, "Linkerd sidecar proxy injected")
 	}
 	log.Infof("patch generated for: %s", report.ResName())
 	log.Debugf("patch: %s", patchJSON)
@@ -87,6 +109,6 @@ func Inject(api *k8s.API,
 func ownerRetriever(api *k8s.API, ns string) inject.OwnerRetrieverFunc {
 	return func(p *v1.Pod) (string, string) {
 		p.SetNamespace(ns)
-		return api.GetOwnerKindAndName(p)
+		return api.GetOwnerKindAndName(p, true)
 	}
 }

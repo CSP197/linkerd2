@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	destinationPb "github.com/linkerd/linkerd2-proxy-api/go/destination"
 	healcheckPb "github.com/linkerd/linkerd2/controller/gen/common/healthcheck"
 	configPb "github.com/linkerd/linkerd2/controller/gen/config"
 	discoveryPb "github.com/linkerd/linkerd2/controller/gen/controller/discovery"
@@ -15,15 +16,15 @@ import (
 )
 
 type mockServer struct {
-	LastRequestReceived proto.Message
-	ResponseToReturn    proto.Message
-	TapStreamsToReturn  []*pb.TapEvent
-	ErrorToReturn       error
+	LastRequestReceived        proto.Message
+	ResponseToReturn           proto.Message
+	DestinationStreamsToReturn []*destinationPb.Update
+	ErrorToReturn              error
 }
 
 type mockGrpcServer struct {
 	mockServer
-	TapStreamsToReturn []*pb.TapEvent
+	DestinationStreamsToReturn []*destinationPb.Update
 }
 
 func (m *mockGrpcServer) StatSummary(ctx context.Context, req *pb.StatSummaryRequest) (*pb.StatSummaryResponse, error) {
@@ -68,10 +69,9 @@ func (m *mockGrpcServer) Config(ctx context.Context, req *pb.Empty) (*configPb.A
 
 func (m *mockGrpcServer) Tap(req *pb.TapRequest, tapServer pb.Api_TapServer) error {
 	m.LastRequestReceived = req
-	if m.ErrorToReturn == nil {
-		for _, msg := range m.TapStreamsToReturn {
-			tapServer.Send(msg)
-		}
+	if m.ErrorToReturn != nil {
+		// Not implemented in public API. Instead, use tap APIServer.
+		return errors.New("Not implemented")
 	}
 
 	return m.ErrorToReturn
@@ -79,13 +79,28 @@ func (m *mockGrpcServer) Tap(req *pb.TapRequest, tapServer pb.Api_TapServer) err
 
 func (m *mockGrpcServer) TapByResource(req *pb.TapByResourceRequest, tapServer pb.Api_TapByResourceServer) error {
 	m.LastRequestReceived = req
+	if m.ErrorToReturn != nil {
+		// Not implemented in public API. Instead, use tap APIServer.
+		return errors.New("Not implemented")
+	}
+
+	return m.ErrorToReturn
+}
+
+func (m *mockGrpcServer) Get(req *destinationPb.GetDestination, destinationServer destinationPb.Destination_GetServer) error {
+	m.LastRequestReceived = req
 	if m.ErrorToReturn == nil {
-		for _, msg := range m.TapStreamsToReturn {
-			tapServer.Send(msg)
+		for _, msg := range m.DestinationStreamsToReturn {
+			destinationServer.Send(msg)
 		}
 	}
 
 	return m.ErrorToReturn
+}
+
+func (m *mockGrpcServer) GetProfile(_ *destinationPb.GetDestination, _ destinationPb.Destination_GetProfileServer) error {
+	// Not implemented in the Public API. Instead, the proxies should reach the Destination gRPC server directly.
+	return errors.New("Not implemented")
 }
 
 func (m *mockGrpcServer) Endpoints(ctx context.Context, req *discoveryPb.EndpointsParams) (*discoveryPb.EndpointsResponse, error) {
@@ -101,27 +116,7 @@ type grpcCallTestCase struct {
 
 func TestServer(t *testing.T) {
 	t.Run("Delegates all non-streaming RPC messages to the underlying grpc server", func(t *testing.T) {
-		mockGrpcServer := &mockGrpcServer{}
-
-		listener, err := net.Listen("tcp", "localhost:0")
-		if err != nil {
-			t.Fatalf("Could not start listener: %v", err)
-		}
-
-		go func() {
-			handler := &handler{
-				grpcServer: mockGrpcServer,
-			}
-			err := http.Serve(listener, handler)
-			if err != nil {
-				t.Fatalf("Could not start server: %v", err)
-			}
-		}()
-
-		client, err := NewInternalClient("linkerd", listener.Addr().String())
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
+		mockGrpcServer, client := getServerClient(t)
 
 		listPodsReq := &pb.ListPodsRequest{}
 		testListPods := grpcCallTestCase{
@@ -165,96 +160,113 @@ func TestServer(t *testing.T) {
 		}
 	})
 
-	t.Run("Delegates all streaming tap RPC messages to the underlying grpc server", func(t *testing.T) {
-		mockGrpcServer := &mockGrpcServer{}
+	t.Run("Delegates all streaming Destination RPC messages to the underlying grpc server", func(t *testing.T) {
+		mockGrpcServer, client := getServerClient(t)
 
-		listener, err := net.Listen("tcp", "localhost:0")
-		if err != nil {
-			t.Fatalf("Could not start listener: %v", err)
-		}
-
-		go func() {
-			handler := &handler{
-				grpcServer: mockGrpcServer,
-			}
-			err := http.Serve(listener, handler)
-			if err != nil {
-				t.Fatalf("Could not start server: %v", err)
-			}
-		}()
-
-		client, err := NewInternalClient("linkerd", listener.Addr().String())
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-
-		expectedTapResponses := []*pb.TapEvent{
+		expectedDestinationGetResponses := []*destinationPb.Update{
 			{
-				Destination: &pb.TcpAddress{
-					Port: 9999,
+				Update: &destinationPb.Update_Add{
+					Add: BuildAddrSet(
+						AuthorityEndpoints{
+							Namespace: "emojivoto",
+							ServiceID: "emoji-svc",
+							Pods: []PodDetails{
+								{
+									Name: "emoji-6bf9f47bd5-jjcrl",
+									IP:   16909060,
+									Port: 8080,
+								},
+							},
+						},
+					),
 				},
-				Source: &pb.TcpAddress{
-					Port: 6666,
-				},
-			}, {
-				Destination: &pb.TcpAddress{
-					Port: 2102,
-				},
-				Source: &pb.TcpAddress{
-					Port: 1983,
+			},
+			{
+				Update: &destinationPb.Update_Add{
+					Add: BuildAddrSet(
+						AuthorityEndpoints{
+							Namespace: "emojivoto",
+							ServiceID: "voting-svc",
+							Pods: []PodDetails{
+								{
+									Name: "voting-7bf9f47bd5-jjdrl",
+									IP:   84281096,
+									Port: 8080,
+								},
+							},
+						},
+					),
 				},
 			},
 		}
-		mockGrpcServer.TapStreamsToReturn = expectedTapResponses
+		mockGrpcServer.DestinationStreamsToReturn = expectedDestinationGetResponses
 		mockGrpcServer.ErrorToReturn = nil
 
-		tapClient, err := client.TapByResource(context.TODO(), &pb.TapByResourceRequest{})
+		destinationGetClient, err := client.Get(context.TODO(), &destinationPb.GetDestination{})
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 
-		for _, expectedTapEvent := range expectedTapResponses {
-			actualTapEvent, err := tapClient.Recv()
+		for _, expectedDestinationGetEvent := range expectedDestinationGetResponses {
+			actualDestinationGetEvent, err := destinationGetClient.Recv()
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
-			if !proto.Equal(actualTapEvent, expectedTapEvent) {
-				t.Fatalf("Expecting tap event to be [%v], but was [%v]", expectedTapEvent, actualTapEvent)
+			if !proto.Equal(actualDestinationGetEvent, expectedDestinationGetEvent) {
+				t.Fatalf("Expecting destination.get event to be [%v], but was [%v]", expectedDestinationGetEvent, actualDestinationGetEvent)
 			}
 		}
 	})
 
-	t.Run("Handles errors before opening keep-alive response", func(t *testing.T) {
-		mockGrpcServer := &mockGrpcServer{}
-
-		listener, err := net.Listen("tcp", "localhost:0")
-		if err != nil {
-			t.Fatalf("Could not start listener: %v", err)
-		}
-
-		go func() {
-			handler := &handler{
-				grpcServer: mockGrpcServer,
-			}
-			err := http.Serve(listener, handler)
-			if err != nil {
-				t.Fatalf("Could not start server: %v", err)
-			}
-		}()
-
-		client, err := NewInternalClient("linkerd", listener.Addr().String())
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
+	t.Run("Handles Tap route errors before opening keep-alive response", func(t *testing.T) {
+		mockGrpcServer, client := getServerClient(t)
 
 		mockGrpcServer.ErrorToReturn = errors.New("expected error")
 
-		_, err = client.Tap(context.TODO(), &pb.TapRequest{})
+		_, err := client.Tap(context.TODO(), &pb.TapRequest{})
 		if err == nil {
 			t.Fatalf("Expecting error, got nothing")
 		}
 	})
+
+	t.Run("Handles TapByResource route errors before opening keep-alive response", func(t *testing.T) {
+		mockGrpcServer, client := getServerClient(t)
+
+		mockGrpcServer.ErrorToReturn = errors.New("expected error")
+
+		_, err := client.TapByResource(context.TODO(), &pb.TapByResourceRequest{})
+		if err == nil {
+			t.Fatalf("Expecting error, got nothing")
+		}
+	})
+
+}
+
+func getServerClient(t *testing.T) (*mockGrpcServer, APIClient) {
+	mockGrpcServer := &mockGrpcServer{}
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("Could not start listener: %v", err)
+	}
+
+	go func() {
+		handler := &handler{
+			grpcServer: mockGrpcServer,
+		}
+		err := http.Serve(listener, handler)
+		if err != nil {
+			t.Fatalf("Could not start server: %v", err)
+		}
+	}()
+
+	client, err := NewInternalClient("linkerd", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	return mockGrpcServer, client
 }
 
 func assertCallWasForwarded(t *testing.T, mockServer *mockServer, expectedRequest proto.Message, expectedResponse proto.Message, functionCall func() (proto.Message, error)) {

@@ -16,7 +16,7 @@ func TestNewFakeAPI(t *testing.T) {
 
 	k8sConfigs := []string{
 		`
-apiVersion: apps/v1beta2
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dep-name
@@ -44,13 +44,13 @@ spec:
 		t.Fatalf("Unexpected error: %s", err)
 	}
 
-	deploy, err := api.AppsV1beta2().Deployments("dep-ns").Get("dep-name", metav1.GetOptions{})
+	deploy, err := api.AppsV1().Deployments("dep-ns").Get("dep-name", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %s", err)
 	}
 	gvk := schema.GroupVersionKind{
 		Group:   "apps",
-		Version: "v1beta2",
+		Version: "v1",
 		Kind:    "Deployment",
 	}
 	if !reflect.DeepEqual(deploy.GroupVersionKind(), gvk) {
@@ -74,7 +74,7 @@ spec:
 func TestNewFakeAPIFromManifests(t *testing.T) {
 	k8sConfigs := []string{
 		`
-apiVersion: apps/v1beta2
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dep-name
@@ -107,13 +107,13 @@ spec:
 		t.Fatalf("Unexpected error: %s", err)
 	}
 
-	deploy, err := api.AppsV1beta2().Deployments("dep-ns").Get("dep-name", metav1.GetOptions{})
+	deploy, err := api.AppsV1().Deployments("dep-ns").Get("dep-name", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %s", err)
 	}
 	gvk := schema.GroupVersionKind{
 		Group:   "apps",
-		Version: "v1beta2",
+		Version: "v1",
 		Kind:    "Deployment",
 	}
 	if !reflect.DeepEqual(deploy.GroupVersionKind(), gvk) {
@@ -153,7 +153,7 @@ data:
 		},
 		{
 			[]string{`
-apiVersion: linkerd.io/v1alpha1
+apiVersion: linkerd.io/v1alpha2
 kind: ServiceProfile
 metadata:
   name: foobar.ns.svc.cluster.local
@@ -175,7 +175,7 @@ spec:
 		tc := tc // pin
 
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			_, _, _, err := NewFakeClientSets(tc.k8sConfigs...)
+			_, _, _, _, err := NewFakeClientSets(tc.k8sConfigs...)
 			if !reflect.DeepEqual(err, tc.err) {
 				t.Fatalf("Expected error: %s, Got: %s", tc.err, err)
 			}
@@ -202,7 +202,7 @@ data:
 		},
 		{
 			[]string{`
-apiVersion: linkerd.io/v1alpha1
+apiVersion: linkerd.io/v1alpha2
 kind: ServiceProfile
 metadata:
   name: foobar.ns.svc.cluster.local
@@ -226,7 +226,7 @@ items:
     namespace: ns
   data:
     foo: YmFyCg==
-- apiVersion: linkerd.io/v1alpha1
+- apiVersion: linkerd.io/v1alpha2
   kind: ServiceProfile
   metadata:
     name: foobar.ns.svc.cluster.local
@@ -253,7 +253,7 @@ items:
 				readers = append(readers, strings.NewReader(m))
 			}
 
-			_, _, _, err := newFakeClientSetsFromManifests(readers)
+			_, _, _, _, err := newFakeClientSetsFromManifests(readers)
 			if !reflect.DeepEqual(err, tc.err) {
 				t.Fatalf("Expected error: %s, Got: %s", tc.err, err)
 			}
@@ -288,7 +288,7 @@ data:
 		},
 		{
 			`
-apiVersion: linkerd.io/v1alpha1
+apiVersion: linkerd.io/v1alpha2
 kind: ServiceProfile
 metadata:
   name: foobar.ns.svc.cluster.local

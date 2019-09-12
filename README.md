@@ -1,6 +1,6 @@
 ![Linkerd][logo]
 
-[![Build Status][ci-badge]][ci]
+[![GitHub Actions Status][github-actions-badge]][github-actions]
 [![GitHub license][license-badge]](LICENSE)
 [![Go Report Card][go-report-card-badge]][go-report-card]
 [![Slack Status][slack-badge]][slack]
@@ -25,7 +25,7 @@ The complete list of Linkerd repos is:
 
 ## Quickstart and documentation
 
-You can run Linkerd on any Kubernetes 1.9+ cluster in a matter of seconds. See
+You can run Linkerd on any Kubernetes 1.12+ cluster in a matter of seconds. See
 the [Linkerd Getting Started Guide][getting-started] for how.
 
 For more comprehensive documentation, start with the [Linkerd
@@ -51,6 +51,12 @@ contributing changes.
 This project is for everyone. We ask that our users and contributors take a few
 minutes to review our [code of conduct][coc].
 
+## Security
+
+### Security Audit
+
+A third party security audit was performed by Cure53. You can see the full report [here](SECURITY_AUDIT.pdf).
+
 ## License
 
 Copyright 2019, Linkerd Authors. All rights reserved.
@@ -67,8 +73,8 @@ CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
 
 <!-- refs -->
-[ci]: https://travis-ci.org/linkerd/linkerd2
-[ci-badge]: https://travis-ci.org/linkerd/linkerd2.svg?branch=master
+[github-actions]: https://github.com/linkerd/linkerd2/actions
+[github-actions-badge]: https://github.com/linkerd/linkerd2/workflows/CI/badge.svg
 [cncf]: https://www.cncf.io/
 [coc]: https://github.com/linkerd/linkerd/wiki/Linkerd-code-of-conduct
 [getting-started]: https://linkerd.io/2/getting-started/

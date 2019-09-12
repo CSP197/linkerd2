@@ -6,11 +6,13 @@ import (
 
 	"github.com/golang/protobuf/ptypes/duration"
 	pb "github.com/linkerd/linkerd2-proxy-api/go/destination"
-	sp "github.com/linkerd/linkerd2/controller/gen/apis/serviceprofile/v1alpha1"
+	sp "github.com/linkerd/linkerd2/controller/gen/apis/serviceprofile/v1alpha2"
 	"github.com/linkerd/linkerd2/pkg/profiles"
 	"github.com/linkerd/linkerd2/pkg/util"
 	logging "github.com/sirupsen/logrus"
 )
+
+const millisPerDecimilli = 10
 
 var (
 	defaultRetryBudget = pb.RetryBudget{
@@ -85,9 +87,23 @@ func toServiceProfile(profile *sp.ServiceProfile) (*pb.DestinationProfile, error
 		budget.Ttl = toDuration(ttl)
 	}
 	return &pb.DestinationProfile{
-		Routes:      routes,
-		RetryBudget: &budget,
+		Routes:       routes,
+		RetryBudget:  &budget,
+		DstOverrides: toDstOverrides(profile.Spec.DstOverrides),
 	}, nil
+}
+
+func toDstOverrides(dsts []*sp.WeightedDst) []*pb.WeightedDst {
+	pbDsts := []*pb.WeightedDst{}
+	for _, dst := range dsts {
+		pbDst := &pb.WeightedDst{
+			Authority: dst.Authority,
+			// Weights are expressed in decimillis: 10_000 represents 100%
+			Weight: uint32(dst.Weight.MilliValue() * millisPerDecimilli),
+		}
+		pbDsts = append(pbDsts, pbDst)
+	}
+	return pbDsts
 }
 
 // toRoute returns a Proxy API Route, given a ServiceProfile Route.
