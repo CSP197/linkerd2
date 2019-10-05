@@ -18,7 +18,7 @@ import (
 
 const targetName = "pod-666"
 
-func busyTest(t *testing.T, wide bool) {
+func busyTest(t *testing.T, output string) {
 	resourceType := k8s.Pod
 	params := util.TapRequestParams{
 		Resource:  resourceType + "/" + targetName,
@@ -40,8 +40,34 @@ func busyTest(t *testing.T, wide bool) {
 					Id: &pb.TapEvent_Http_StreamId{
 						Base: 1,
 					},
+					Method: &pb.HttpMethod{
+						Type: &pb.HttpMethod_Registered_{
+							Registered: pb.HttpMethod_GET,
+						},
+					},
+					Scheme: &pb.Scheme{
+						Type: &pb.Scheme_Registered_{
+							Registered: pb.Scheme_HTTPS,
+						},
+					},
 					Authority: params.Authority,
 					Path:      params.Path,
+					Headers: &pb.Headers{
+						Headers: []*pb.Headers_Header{
+							{
+								Name: "header-name-1",
+								Value: &pb.Headers_Header_ValueStr{
+									ValueStr: "header-value-str-1",
+								},
+							},
+							{
+								Name: "header-name-2",
+								Value: &pb.Headers_Header_ValueBin{
+									ValueBin: []byte("header-value-bin-2"),
+								},
+							},
+						},
+					},
 				},
 			},
 		},
@@ -68,6 +94,16 @@ func busyTest(t *testing.T, wide bool) {
 						Seconds: 100,
 					},
 					ResponseBytes: 1337,
+					Trailers: &pb.Headers{
+						Headers: []*pb.Headers_Header{
+							{
+								Name: "trailer-name",
+								Value: &pb.Headers_Header_ValueBin{
+									ValueBin: []byte("header-value-bin"),
+								},
+							},
+						},
+					},
 				},
 			},
 		},
@@ -92,16 +128,22 @@ func busyTest(t *testing.T, wide bool) {
 	defer ts.Close()
 	kubeAPI.Config.Host = ts.URL
 
+	options := newTapOptions()
+	options.output = output
+
 	writer := bytes.NewBufferString("")
-	err = requestTapByResourceFromAPI(writer, kubeAPI, req, wide)
+	err = requestTapByResourceFromAPI(writer, kubeAPI, req, options)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
 	var goldenFilePath string
-	if wide {
+	switch options.output {
+	case wideOutput:
 		goldenFilePath = "testdata/tap_busy_output_wide.golden"
-	} else {
+	case jsonOutput:
+		goldenFilePath = "testdata/tap_busy_output_json.golden"
+	default:
 		goldenFilePath = "testdata/tap_busy_output.golden"
 	}
 
@@ -110,19 +152,23 @@ func busyTest(t *testing.T, wide bool) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 	expectedContent := string(goldenFileBytes)
-	output := writer.String()
-	if expectedContent != output {
-		t.Fatalf("Expected function to render:\n%s\bbut got:\n%s", expectedContent, output)
+	actual := writer.String()
+	if expectedContent != actual {
+		t.Fatalf("Expected function to render:\n%s\bbut got:\n%s", expectedContent, actual)
 	}
 }
 
 func TestRequestTapByResourceFromAPI(t *testing.T) {
 	t.Run("Should render busy response if everything went well", func(t *testing.T) {
-		busyTest(t, false)
+		busyTest(t, "")
 	})
 
 	t.Run("Should render wide busy response if everything went well", func(t *testing.T) {
-		busyTest(t, true)
+		busyTest(t, "wide")
+	})
+
+	t.Run("Should render JSON busy response if everything went well", func(t *testing.T) {
+		busyTest(t, "json")
 	})
 
 	t.Run("Should render empty response if no events returned", func(t *testing.T) {
@@ -150,8 +196,9 @@ func TestRequestTapByResourceFromAPI(t *testing.T) {
 		defer ts.Close()
 		kubeAPI.Config.Host = ts.URL
 
+		options := newTapOptions()
 		writer := bytes.NewBufferString("")
-		err = requestTapByResourceFromAPI(writer, kubeAPI, req, false)
+		err = requestTapByResourceFromAPI(writer, kubeAPI, req, options)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -188,8 +235,9 @@ func TestRequestTapByResourceFromAPI(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 
+		options := newTapOptions()
 		writer := bytes.NewBufferString("")
-		err = requestTapByResourceFromAPI(writer, kubeAPI, req, false)
+		err = requestTapByResourceFromAPI(writer, kubeAPI, req, options)
 		if err == nil {
 			t.Fatalf("Expecting error, got nothing but output [%s]", writer.String())
 		}

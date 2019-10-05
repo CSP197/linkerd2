@@ -45,6 +45,10 @@ func TestNewValues(t *testing.T) {
 		RestrictDashboardPrivileges: false,
 		DisableHeartBeat:            false,
 		HeartbeatSchedule:           "0 0 * * *",
+		InstallNamespace:            true,
+		NodeSelector: map[string]string{
+			"beta.kubernetes.io/os": "linux",
+		},
 
 		Identity: &Identity{
 			TrustDomain: "cluster.local",
@@ -83,6 +87,10 @@ func TestNewValues(t *testing.T) {
 					Limit:   "",
 					Request: "",
 				},
+			},
+			Trace: &Trace{
+				CollectorSvcAddr:    "",
+				CollectorSvcAccount: "default",
 			},
 			UID: 2102,
 		},

@@ -7,7 +7,7 @@ EnableH2Upgrade: true
 ImagePullPolicy: &image_pull_policy IfNotPresent
 
 # control plane version. See Proxy section for proxy version
-LinkerdVersion: &linkerd_version edge-19.9.1
+LinkerdVersion: &linkerd_version edge-19.10.1
 
 Namespace: linkerd
 OmitWebhookSideEffects: false
@@ -74,6 +74,9 @@ Proxy:
     Memory:
       Limit: ""
       Request: ""
+  Trace:
+    CollectorSvcAddr: ""
+    CollectorSvcAccount: default
   UID: 2102
 
 # proxy-init configuration
@@ -125,3 +128,15 @@ ProxyInjectDisabled: disabled
 ControllerComponentLabel: linkerd.io/control-plane-component
 ControllerNamespaceLabel: linkerd.io/control-plane-ns
 LinkerdNamespaceLabel: linkerd.io/is-control-plane
+
+# If the namespace is controlled by an external tool or can't be installed with Helm
+# you can disable its installation. In this case:
+# - The namespace created by the external tool must match the Namespace value above
+# - The external tool needs to create the namespace with the label:
+#     config.linkerd.io/admission-webhooks: disabled
+InstallNamespace: true
+
+# Node selection constraints for control-plane components
+# https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector.
+NodeSelector:
+  beta.kubernetes.io/os: linux

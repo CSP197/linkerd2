@@ -1,3 +1,100 @@
+## edge-19.10.1
+
+This edge release is a release candidate for `stable-2.6`.
+
+* Proxy
+  * Improved error logging when the proxy fails to emit trace spans
+  * Fixed bug in distributed tracing where trace ids with fewer than 16 bytes
+    were discarded
+* Internal
+  * Added integration tests for `linkerd edges` and `linkerd endpoints`
+
+## edge-19.9.5
+
+This edge release is a release candidate for `stable-2.6`.
+
+* Helm
+  * Added node selector constraints, so users can control which nodes the
+    control plane is deployed to (thanks @bmcstdio!)
+* CLI
+  * Added request and response headers to the JSON output option for `linkerd
+    tap`
+
+## edge-19.9.4
+
+This edge release introduces experimental support for distributed tracing as
+well as a redesigned sidebar in the Web UI!
+
+Experimental support for distributed tracing means that Linkerd data plane
+proxies can now emit trace spans, allowing you to see the exact amount of time
+spent in the Linkerd proxy for traced requests. The new
+`config.linkerd.io/trace-collector` and
+`config.alpha.linkerd.io/trace-collector-service-account` tracing annotations
+allow specifying which pods should emit trace spans.
+
+The goal of the dashboard's sidebar redesign was to reduce load on Prometheus
+and simplify navigation by providing top-level views centered around namespaces
+and workloads.
+
+* CLI
+  * Introduced a new `--cluster-domain` flag to the `linkerd install` command
+    that allows setting a custom cluster domain (thanks @arminbuerkle!)
+  * Fixed the `linkerd endpoints` command to use the correct Destination API
+    address (thanks @Pothulapati!)
+  * Added `--disable-heartbeat` flag for `linkerd` `install|upgrade` commands
+* Controller
+  * Instrumented the proxy-injector to provide additional metrics about
+    injection (thanks @Pothulapati!)
+  * Added support for `config.linkerd.io/admission-webhooks: disabled` label on
+    namespaces so that the pods creation events in these namespaces are ignored
+    by the proxy injector; this fixes situations in HA deployments where the
+    proxy-injector is installed in `kube-system` (thanks @hasheddan!)
+  * Introduced `config.linkerd.io/trace-collector` and
+    `config.alpha.linkerd.io/trace-collector-service-account` pod spec
+    annotations to support per-pod tracing
+* Web UI
+  * Workloads are now viewed by namespace, with an "All Namespaces" option, to
+    improve dashboard performance
+* Proxy
+  * Added experimental distributed tracing support
+
+## edge-19.9.3
+
+* Helm
+  * Allowed disabling namespace creation during install (thanks @KIVagant!)
+* CLI
+  * Added a new `json` output option to the `linkerd tap` command
+* Controller
+  * Fixed proxy injector timeout during a large number of concurrent injections
+  * Separated the destination controller into its own separate deployment
+  * Updated Prometheus config to keep only needed `cadvisor` metrics,
+    substantially reducing the number of time-series stored in most clusters
+* Web UI
+  * Fixed bad request in the top routes tab on empty fields (thanks @pierDipi!)
+* Proxy
+  * Fixes to the client's backoff logic
+  * Added 587 (SMTP) to the list of ports to ignore in protocol detection (bound
+    to server-speaks-first protocols) (thanks @brianstorti!)
+
+## edge-19.9.2
+
+Much of our effort has been focused on improving our build and test
+infrastructure, but this edge release lays the groundwork for some big
+new features to land in the coming releases!
+
+* Helm
+  * There's now a public Helm repo! This release can be installed with:
+   `helm repo add linkerd-edge https://helm.linkerd.io/edge && helm install linkerd-edge/linkerd2`
+  * Improved TLS credential parsing by ignoring spurious newlines
+* Proxy
+  * Decreased proxy-init Docker image size by removing bundled debug tools
+* Web UI
+  * Fixed an issue where the edges table could end up with duplicates
+  * Added an icon to more clearly label external links
+* Internal
+  * Upgraded client-go to v12.0.0
+  * Moved CI from Travis to GitHub Actions
+
 ## edge-19.9.1
 
 This edge release adds traffic splits into the Linkerd dashboard as well as a
